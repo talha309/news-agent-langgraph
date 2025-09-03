@@ -6,9 +6,14 @@ dist/
 wheels/
 *.egg-info
 
-# Virtual environments
-.venv
-.environments
+# Python virtual environments
+.venv/
+env/
+venv/
+ENV/
+.environments/
+
+# Environment files
 .env
-/.env
-./env
+./env/
+git rm -r --cached .venv env venv ENV .environments .env

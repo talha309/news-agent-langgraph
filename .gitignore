@@ -15,5 +15,6 @@ ENV/
 
 # Environment files
 .env
-./env/
-git rm -r --cached .venv env venv ENV .environments .env
+.env.*
+*.env
+env/

@@ -66,20 +66,48 @@ else:
 @tool
 def runtime_searches(query: str, max_results: int = 10) -> str:
     """Run a real-time web/news search using Tavily for the latest news and information."""
+    print(f"Searching for: {query}")
     if not tavily_client:
         return "Error: Tavily API key not configured. Please set TAVILY_API_KEY environment variable."
+    
     try:
-        result = tavily_client.search(query=query, max_results=max_results, search_depth="advanced")
-        items = result.get("results", []) if isinstance(result, dict) else []
-        if not items:
-            return "No results found for the query."
-        formatted_results = []
-        for item in items:
-            title = item.get("title", "Untitled")
-            url = item.get("url", "")
-            snippet = item.get("content") or item.get("snippet", "")
-            formatted_results.append(f"Title: {title}\nContent: {snippet}\nSource: {url}")
-        return "\n\n".join(formatted_results)
+        # Try different search strategies if first attempt fails
+        search_queries = [query]
+        
+        # Add alternative queries for better results
+        if "latest news" in query.lower():
+            search_queries.append(query.replace("latest news", "breaking news"))
+            search_queries.append(query.replace("latest news", "current events"))
+        
+        for search_query in search_queries:
+            try:
+                result = tavily_client.search(
+                    query=search_query, 
+                    max_results=max_results, 
+                    search_depth="advanced",
+                    include_domains=["reuters.com", "bbc.com", "cnn.com", "ap.org", "aljazeera.com", "dawn.com", "tribune.com.pk"]
+                )
+                items = result.get("results", []) if isinstance(result, dict) else []
+                
+                if items:
+                    print(f"Found {len(items)} results for query: {search_query}")
+                    formatted_results = []
+                    for item in items:
+                        title = item.get("title", "Untitled")
+                        url = item.get("url", "")
+                        snippet = item.get("content") or item.get("snippet", "")
+                        if snippet:  # Only include items with content
+                            formatted_results.append(f"Title: {title}\nContent: {snippet}\nSource: {url}")
+                    
+                    if formatted_results:
+                        return "\n\n".join(formatted_results)
+                        
+            except Exception as e:
+                print(f"Search failed for '{search_query}': {e}")
+                continue
+        
+        return "No relevant news results found. Please try a different query or check if the topic is currently in the news."
+        
     except Exception as e:
         return f"Search error: {str(e)}. Please try a different query or check API configuration."
 
@@ -88,11 +116,17 @@ def Summarize_text(result: str) -> str:
     """Summarize the given search results in a concise, structured format."""
     if not llm:
         return "Error: Google API key not configured. Please set GOOGLE_API_KEY environment variable."
+    
+    # Check if we have meaningful search results
+    if "No relevant news results found" in result or "Search error" in result:
+        return f"Limited search results available: {result}"
+    
     summary_prompt = (
         f"Analyze the following search results and organize them into clear news categories. "
         f"Extract the most important stories and group them by topic (e.g., Politics, Economy, Security, Natural Disasters, etc.). "
         f"For each story, identify key facts, numbers, dates, and sources. "
         f"Focus on the most significant developments and their impact. "
+        f"If the results are limited, work with what's available and note any limitations. "
         f"Search results: {result}"
     )
     try:
@@ -106,16 +140,29 @@ def write_text(result: str) -> str:
     """Rewrite the summary in a vivid, human-like style with detailed news descriptions."""
     if not llm:
         return "Error: Google API key not configured. Please set GOOGLE_API_KEY environment variable."
-    write_prompt = (
-        f"Transform the following analyzed news into a professional news article format. "
-        f"Structure it with clear section headings (like 'Flood Crisis Deepens in Punjab', 'China Withdraws from Major CPEC Project', etc.). "
-        f"Each section should be 2-4 paragraphs with engaging, detailed descriptions. "
-        f"Include specific numbers, dates, and impact details. "
-        f"Add source citations in brackets like [AP News], [Reuters], etc. "
-        f"End with a 'Summary Snapshot' table with Category and Summary columns. "
-        f"Make it read like a professional news report with vivid details and clear organization. "
-        f"Analyzed news: {result}"
-    )
+    
+    # Check if we have limited results
+    if "Limited search results available" in result:
+        write_prompt = (
+            f"The following analysis indicates limited search results were available. "
+            f"Create a professional news article based on the available information, "
+            f"but acknowledge the limitations in data availability. "
+            f"Structure it with clear headings and provide the best possible analysis with available data. "
+            f"End with a note about the limited information available. "
+            f"Analysis: {result}"
+        )
+    else:
+        write_prompt = (
+            f"Transform the following analyzed news into a professional news article format. "
+            f"Structure it with clear section headings (like 'Flood Crisis Deepens in Punjab', 'China Withdraws from Major CPEC Project', etc.). "
+            f"Each section should be 2-4 paragraphs with engaging, detailed descriptions. "
+            f"Include specific numbers, dates, and impact details. "
+            f"Add source citations in brackets like [AP News], [Reuters], etc. "
+            f"End with a 'Summary Snapshot' table with Category and Summary columns. "
+            f"Make it read like a professional news report with vivid details and clear organization. "
+            f"Analyzed news: {result}"
+        )
+    
     try:
         written_text = llm.invoke(write_prompt).content
         return written_text
@@ -132,18 +179,19 @@ class MessagesState(TypedDict):
 
 # System prompt
 SYSTEM_PROMPT = os.getenv("SYSTEM_PROMPT", """
-    You are a professional news agent with access to tools: 'runtime_searches' for web searches,
-    'Summarize_text' to analyze and categorize news, and 'write_text' to create professional news articles.
-    When the user asks for the latest news (e.g., 'latest news in Pakistan' or similar queries with 'latest', 'today',
-    'current', 'breaking', 'live', 'trending', 'updates', 'now'), follow this process:
-    1. Call 'runtime_searches' with a broad query (e.g., 'latest news Pakistan')
-    2. Call 'Summarize_text' to analyze and categorize the search results
-    3. Call 'write_text' to transform the analysis into a professional news article format
-    The final article should have clear section headings, detailed paragraphs with specific facts and numbers,
-    source citations in brackets, and end with a 'Summary Snapshot' table.
-    Do not ask for clarifications; fetch relevant news directly.
-    Return the 'write_text' output as the final response without calling additional tools.
-    For non-news queries (e.g., greetings, coding help, timeless facts), do not call tools.
+You are a professional news agent with access to three tools:
+1. 'runtime_searches' - for web searches to get latest news
+2. 'Summarize_text' - to analyze and categorize search results  
+3. 'write_text' - to create professional news articles
+
+IMPORTANT: When users ask for news (containing words like 'latest', 'today', 'current', 'breaking', 'news', 'Pakistan', etc.), you MUST:
+1. ALWAYS call 'runtime_searches' first with a relevant query
+2. Then call 'Summarize_text' with the search results
+3. Finally call 'write_text' with the summary to create the final article
+
+Do NOT respond without calling these tools. Do NOT say you cannot create articles. Always use the tools to get real information.
+
+For non-news queries (greetings, coding help, general questions), you may respond directly without tools.
 """)
 
 # Node function

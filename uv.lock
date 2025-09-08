@@ -790,6 +790,7 @@ dependencies = [
     { name = "langgraph" },
     { name = "pydantic" },
     { name = "python-dotenv" },
+    { name = "sqlalchemy" },
     { name = "tavily-python" },
     { name = "uvicorn" },
 ]
@@ -804,6 +805,7 @@ requires-dist = [
     { name = "langgraph", specifier = ">=0.6.6" },
     { name = "pydantic", specifier = ">=2.11.7" },
     { name = "python-dotenv", specifier = ">=1.1.1" },
+    { name = "sqlalchemy", specifier = ">=2.0.43" },
     { name = "tavily-python", specifier = ">=0.7.11" },
     { name = "uvicorn", specifier = ">=0.35.0" },
 ]

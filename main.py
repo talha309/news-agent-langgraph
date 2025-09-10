@@ -1,4 +1,5 @@
 from fastapi import FastAPI, HTTPException, Depends
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import Annotated
 from typing_extensions import TypedDict
@@ -204,6 +205,15 @@ graph = builder.compile()
 # FastAPI app
 app = FastAPI()
 
+# Add CORS middleware
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],  # React dev server
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 # DB-backed history helpers
 def load_history(db: Session, session_id: str):
     records = db.query(models.Message).filter(models.Message.session_id == session_id).order_by(models.Message.id.asc()).all()
@@ -239,6 +249,22 @@ def on_startup():
         pass
     Base.metadata.create_all(bind=engine)
 
+
+@app.get("/")
+async def root():
+    return {"message": "News Agent API is running", "status": "healthy"}
+
+@app.get("/health")
+async def health_check():
+    return {"status": "healthy", "services": {
+        "llm": llm is not None,
+        "tavily": tavily_client is not None,
+        "database": True
+    }}
+
+@app.get("/test")
+async def test_endpoint():
+    return {"message": "Backend is working!", "timestamp": time.time()}
 
 @app.get("/query")
 async def handle_query(query: str, session_id: str | None = None, db: Session = Depends(get_db)):

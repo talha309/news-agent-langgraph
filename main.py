@@ -12,6 +12,7 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from tavily import TavilyClient
 from dotenv import load_dotenv
 import os
+import asyncio
 import time
 import logging
 from uuid import uuid4
@@ -51,12 +52,12 @@ if TAVILY_API_KEY:
 
 # Define tools
 @tool
-def runtime_searches(query: str, max_results: int = 10) -> str:
+def runtime_searches(query: str, min_results:int = 1, max_results: int = 5) -> str:
     """
     This tool searches the internet using Tavily and gives a simple summary.
     Arguments:
         query: What do you want to search? (e.g., "latest news")
-        max_results: How many results to show? Default is 10.
+        max_results: How many results to show? Default is max_results.
     Returns:
         A string with titles, links, and summaries of top results.
     """
@@ -76,8 +77,8 @@ def runtime_searches(query: str, max_results: int = 10) -> str:
                 result = tavily_client.search(
                     query=search_query, 
                     max_results=max_results, 
-                    search_depth="advanced",
-                    include_domains=["reuters.com", "bbc.com", "cnn.com", "ap.org", "aljazeera.com", "dawn.com", "tribune.com.pk"]
+                    search_depth="basic",
+                    include_domains=["reuters.com", "bbc.com", "cnn.com", "ap.org", "dawn.com", "tribune.com.pk"]
                 )
                 items = result.get("results", []) if isinstance(result, dict) else []
                 
@@ -321,8 +322,15 @@ async def handle_query(query: str, session_id: str | None = None, db: Session = 
             # Do not fail the whole request due to logging failure; log and continue
             logger.error(f"Failed to persist query: {db_err}")
 
-        # Execute LangGraph workflow
-        result = await graph.ainvoke({"messages": langgraph_messages})
+        # Execute LangGraph workflow with server-side timeout budget
+        try:
+            result = await asyncio.wait_for(
+                graph.ainvoke({"messages": langgraph_messages}), timeout=55
+            )
+        except asyncio.TimeoutError:
+            error_msg = "Request timeout. Please try again with a simpler query."
+            append_message(db, session_id, "assistant", error_msg)
+            raise HTTPException(status_code=408, detail=error_msg)
         final_msgs = result.get("messages", [])
         ai_msgs = [m for m in final_msgs if isinstance(m, AIMessage)]
         
@@ -346,4 +354,7 @@ async def handle_query(query: str, session_id: str | None = None, db: Session = 
         else:
             error_msg = f"Error processing request: {error_msg}"
         append_message(db, session_id, "assistant", error_msg)
+        # Preserve 408 if already mapped above
+        if "timeout" in error_msg.lower():
+            raise HTTPException(status_code=408, detail=error_msg)
         raise HTTPException(status_code=500, detail=error_msg)

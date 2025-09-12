@@ -253,7 +253,7 @@ def on_startup():
 
 @app.get("/")
 async def root():
-    return {"message": "News Agent API is running", "status": "healthy"}
+    return {"welcome to news-agent platform"}
 
 @app.get("/health")
 async def health_check():

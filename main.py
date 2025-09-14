@@ -65,6 +65,7 @@ class MessagesState(TypedDict):
 def runtime_searches(query: str, min_results: int = 1, max_results: int = 5) -> str:
     """Search using Tavily and return a concatenated summary of results.
     This function is intentionally synchronous to match the way tools are used in your graph.
+    The content maybe relavent to the user query.
     """
     logger.info(f"runtime_searches called with: {query}")
     global tavily_client
